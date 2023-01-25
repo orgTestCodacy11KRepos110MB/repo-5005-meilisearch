@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use error::{AuthControllerError, Result};
+use maplit::hashset;
 use meilisearch_types::index_uid_pattern::IndexUidPattern;
 use meilisearch_types::keys::{Action, CreateApiKey, Key, PatchApiKey};
 use meilisearch_types::star_or::StarOr;
@@ -182,13 +183,13 @@ impl Default for AuthFilter {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum SearchRules {
-    Set(HashSet<String>),
-    Map(HashMap<String, Option<IndexSearchRules>>),
+    Set(HashSet<IndexUidPattern>),
+    Map(HashMap<IndexUidPattern, Option<IndexSearchRules>>),
 }
 
 impl Default for SearchRules {
     fn default() -> Self {
-        Self::Set(Some("*".to_string()).into_iter().collect())
+        Self::Set(hashset! { IndexUidPattern::try_from("*".to_string()).unwrap() })
     }
 }
 
@@ -198,16 +199,12 @@ impl SearchRules {
             Self::Set(set) => {
                 set.contains("*")
                     || set.contains(index)
-                    || set
-                        .iter() // We must store the IndexUidPattern in the Set
-                        .any(|pattern| IndexUidPattern::new_unchecked(pattern).matches_str(index))
+                    || set.iter().any(|pattern| pattern.matches_str(index))
             }
             Self::Map(map) => {
                 map.contains_key("*")
                     || map.contains_key(index)
-                    || map
-                        .keys() // We must store the IndexUidPattern in the Map
-                        .any(|pattern| IndexUidPattern::new_unchecked(pattern).matches_str(index))
+                    || map.keys().any(|pattern| pattern.matches_str(index))
             }
         }
     }
@@ -215,13 +212,17 @@ impl SearchRules {
     pub fn get_index_search_rules(&self, index: &str) -> Option<IndexSearchRules> {
         match self {
             Self::Set(set) => {
-                if set.contains("*") || set.contains(index) {
+                if set.contains("*")
+                    || set.contains(index)
+                    || set.iter().any(|pattern| pattern.matches_str(index))
+                {
                     Some(IndexSearchRules::default())
                 } else {
                     None
                 }
             }
             Self::Map(map) => {
+                todo!("match the pattern");
                 map.get(index).or_else(|| map.get("*")).map(|isr| isr.clone().unwrap_or_default())
             }
         }
@@ -229,7 +230,7 @@ impl SearchRules {
 
     /// Return the list of indexes such that `self.is_index_authorized(index) == true`,
     /// or `None` if all indexes satisfy this condition.
-    pub fn authorized_indexes(&self) -> Option<Vec<String>> {
+    pub fn authorized_indexes(&self) -> Option<Vec<IndexUidPattern>> {
         match self {
             SearchRules::Set(set) => {
                 if set.contains("*") {
@@ -250,7 +251,7 @@ impl SearchRules {
 }
 
 impl IntoIterator for SearchRules {
-    type Item = (String, IndexSearchRules);
+    type Item = (IndexUidPattern, IndexSearchRules);
     type IntoIter = Box<dyn Iterator<Item = Self::Item>>;
 
     fn into_iter(self) -> Self::IntoIter {
