@@ -196,6 +196,44 @@ fn facet_ordered_iterative<'t>(
     Ok(Box::new(number_iter.chain(string_iter).map(Ok)) as Box<dyn Iterator<Item = _>>)
 }
 
+fn facet_extreme_value<'t>(
+    index: &'t Index,
+    rtxn: &'t heed::RoTxn,
+    mut extreme_it: Box<dyn Iterator<Item = heed::Result<RoaringBitmap>> + 't>,
+    field_id: FieldId,
+) -> Result<Option<f64>> {
+    let Some(extreme_value) = extreme_it.next() else { return Ok(None) };
+    let documents = index.documents(rtxn, extreme_value?.into_iter())?;
+    let Some((_, document)) = documents.first() else { return Ok(None) };
+
+    let Some(value) = document.get(field_id) else { return Ok(None) };
+    let Ok(value) = std::str::from_utf8(value) else { return Ok(None) };
+
+    Ok(value.parse().ok())
+}
+
+pub fn facet_min_value<'t>(
+    index: &'t Index,
+    rtxn: &'t heed::RoTxn,
+    field_id: FieldId,
+    candidates: RoaringBitmap,
+) -> Result<Option<f64>> {
+    let db = index.facet_id_f64_docids.remap_key_type::<FacetGroupKeyCodec<ByteSliceRefCodec>>();
+    let it = ascending_facet_sort(rtxn, db, field_id, candidates)?;
+    facet_extreme_value(index, rtxn, it, field_id)
+}
+
+pub fn facet_max_value<'t>(
+    index: &'t Index,
+    rtxn: &'t heed::RoTxn,
+    field_id: FieldId,
+    candidates: RoaringBitmap,
+) -> Result<Option<f64>> {
+    let db = index.facet_id_f64_docids.remap_key_type::<FacetGroupKeyCodec<ByteSliceRefCodec>>();
+    let it = descending_facet_sort(rtxn, db, field_id, candidates)?;
+    facet_extreme_value(index, rtxn, it, field_id)
+}
+
 fn facet_ordered_set_based<'t>(
     index: &'t Index,
     rtxn: &'t heed::RoTxn,
