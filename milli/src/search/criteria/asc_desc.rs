@@ -202,12 +202,14 @@ fn facet_extreme_value<'t>(
     mut extreme_it: Box<dyn Iterator<Item = heed::Result<RoaringBitmap>> + 't>,
     field_id: FieldId,
 ) -> Result<Option<f64>> {
-    let Some(extreme_value) = extreme_it.next() else { return Ok(None) };
+    let extreme_value =
+        if let Some(extreme_value) = extreme_it.next() { extreme_value } else { return Ok(None) };
     let documents = index.documents(rtxn, extreme_value?.into_iter())?;
-    let Some((_, document)) = documents.first() else { return Ok(None) };
+    let document =
+        if let Some((_, document)) = documents.first() { document } else { return Ok(None) };
 
-    let Some(value) = document.get(field_id) else { return Ok(None) };
-    let Ok(value) = std::str::from_utf8(value) else { return Ok(None) };
+    let value = if let Some(value) = document.get(field_id) { value } else { return Ok(None) };
+    let value = if let Ok(value) = std::str::from_utf8(value) { value } else { return Ok(None) };
 
     Ok(value.parse().ok())
 }

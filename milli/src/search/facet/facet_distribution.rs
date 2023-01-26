@@ -281,7 +281,11 @@ impl<'a> FacetDistribution<'a> {
     pub fn compute_stats(&self) -> Result<BTreeMap<String, (f64, f64)>> {
         let fields_ids_map = self.index.fields_ids_map(self.rtxn)?;
         let filterable_fields = self.index.filterable_fields(self.rtxn)?;
-        let Some(candidates) = self.candidates.clone() else { return Ok(Default::default()) };
+        let candidates = if let Some(candidates) = self.candidates.clone() {
+            candidates
+        } else {
+            return Ok(Default::default());
+        };
 
         let fields = match &self.facets {
             Some(facets) => {
@@ -304,18 +308,26 @@ impl<'a> FacetDistribution<'a> {
         let mut distribution = BTreeMap::new();
         for (fid, name) in fields_ids_map.iter() {
             if crate::is_faceted(name, &fields) {
-                let Some(min_value) = crate::search::criteria::facet_min_value(
+                let min_value = if let Some(min_value) = crate::search::criteria::facet_min_value(
                     self.index,
                     self.rtxn,
                     fid,
                     candidates.clone(),
-                )? else { continue; };
-                let Some(max_value) = crate::search::criteria::facet_max_value(
+                )? {
+                    min_value
+                } else {
+                    continue;
+                };
+                let max_value = if let Some(max_value) = crate::search::criteria::facet_max_value(
                     self.index,
                     self.rtxn,
                     fid,
                     candidates.clone(),
-                )? else { continue; };
+                )? {
+                    max_value
+                } else {
+                    continue;
+                };
 
                 distribution.insert(name.to_string(), (min_value, max_value));
             }
